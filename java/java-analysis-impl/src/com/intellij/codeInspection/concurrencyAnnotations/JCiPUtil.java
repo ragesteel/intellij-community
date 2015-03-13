@@ -23,13 +23,15 @@ import org.jetbrains.annotations.NonNls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Arrays;
+
 public class JCiPUtil {
   @NonNls
-  private static final String IMMUTABLE = "net.jcip.annotations.Immutable";
+  private static final String[] IMMUTABLE = {"javax.annotation.concurrent.Immutable", "net.jcip.annotations.Immutable"};
   @NonNls
-  private static final String GUARDED_BY = "net.jcip.annotations.GuardedBy";
+  private static final String[] GUARDED_BY = {"javax.annotation.concurrent.GuardedBy", "net.jcip.annotations.GuardedBy"};
   @NonNls
-  private static final String THREAD_SAFE = "net.jcip.annotations.ThreadSafe";
+  private static final String[] THREAD_SAFE = {"javax.annotation.concurrent.ThreadSafe", "net.jcip.annotations.ThreadSafe"};
 
   public static boolean isJCiPAnnotation(String ref) {
     return "Immutable".equals(ref) || "GuardedBy".equals(ref) || "ThreadSafe".equals(ref);
@@ -85,7 +87,7 @@ public class JCiPUtil {
   }
 
   public static boolean isGuardedByAnnotation(PsiAnnotation annotation) {
-    return GUARDED_BY.equals(annotation.getQualifiedName());
+    return Arrays.binarySearch(GUARDED_BY, annotation.getQualifiedName()) >= 0;
   }
 
   public static boolean isGuardedByTag(PsiDocTag tag) {
