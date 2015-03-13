@@ -32,7 +32,7 @@ public class JCiPUtil {
   private static final String THREAD_SAFE = "net.jcip.annotations.ThreadSafe";
 
   public static boolean isJCiPAnnotation(String ref) {
-    return "Immutable".equals(ref) || "GuardedBy".equals(ref) || "ThreadSafe".equals("ref");
+    return "Immutable".equals(ref) || "GuardedBy".equals(ref) || "ThreadSafe".equals(ref);
   }
 
   private JCiPUtil() {
