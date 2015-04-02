@@ -21,6 +21,7 @@ import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.OpenFileDescriptor;
+import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Computable;
@@ -31,6 +32,7 @@ import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.lang.ref.WeakReference;
 import java.util.List;
 
 /**
@@ -58,7 +60,7 @@ public abstract class SourcePosition implements Navigatable{
     @NotNull private final PsiFile myFile;
     private long myModificationStamp = -1L;
 
-    private PsiElement myPsiElement;
+    private WeakReference<PsiElement> myPsiElementRef;
     private Integer myLine;
     private Integer myOffset;
 
@@ -119,7 +121,7 @@ public abstract class SourcePosition implements Navigatable{
         myModificationStamp = myFile.getModificationStamp();
         myLine = null;
         myOffset = null;
-        myPsiElement = null;
+        myPsiElementRef = null;
       }
     }
 
@@ -127,7 +129,7 @@ public abstract class SourcePosition implements Navigatable{
       if (myModificationStamp != myFile.getModificationStamp()) {
         return true;
       }
-      final PsiElement psiElement = myPsiElement;
+      final PsiElement psiElement = myPsiElementRef != null ? myPsiElementRef.get() : null;
       return psiElement != null && !ApplicationManager.getApplication().runReadAction(new Computable<Boolean>() {
         @Override
         public Boolean compute() {
@@ -157,10 +159,13 @@ public abstract class SourcePosition implements Navigatable{
     @Override
     public PsiElement getElementAt() {
       updateData();
-      if (myPsiElement == null) {
-        myPsiElement = calcPsiElement();
+      PsiElement element = myPsiElementRef != null ? myPsiElementRef.get() : null;
+      if (element == null) {
+        element = calcPsiElement();
+        myPsiElementRef = new WeakReference<PsiElement>(element);
+        return element;
       }
-      return myPsiElement;
+      return element;
     }
 
     protected int calcLine() {
@@ -172,6 +177,7 @@ public abstract class SourcePosition implements Navigatable{
           document = PsiDocumentManager.getInstance(file.getProject()).getDocument(file.getOriginalFile());
         }
       }
+      catch (ProcessCanceledException ignored) {}
       catch (Throwable e) {
         LOG.error(e);
       }

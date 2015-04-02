@@ -15,12 +15,16 @@
  */
 package com.jetbrains.numpy.codeInsight;
 
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.jetbrains.numpy.documentation.NumPyDocString;
 import com.jetbrains.numpy.documentation.NumPyDocStringParameter;
 import com.jetbrains.python.psi.*;
+import com.jetbrains.python.psi.impl.PyBuiltinCache;
+import com.jetbrains.python.psi.impl.PyExpressionCodeFragmentImpl;
 import com.jetbrains.python.psi.types.PyType;
 import com.jetbrains.python.psi.types.PyTypeProviderBase;
 import com.jetbrains.python.psi.types.TypeEvalContext;
@@ -47,6 +51,7 @@ public class NumpyDocStringTypeProvider extends PyTypeProviderBase {
     // an instance of 'numpy.core.multiarray.dtype', however the type checker isn't able to check it.
     // 30 occurrences
     NUMPY_ALIAS_TO_REAL_TYPE.put("data-type", "object");
+    NUMPY_ALIAS_TO_REAL_TYPE.put("dtype", "object");
     // 16 occurrences
     NUMPY_ALIAS_TO_REAL_TYPE.put("scalar", "int or long or float or complex");
     // 10 occurrences
@@ -62,6 +67,8 @@ public class NumpyDocStringTypeProvider extends PyTypeProviderBase {
     NUMPY_ALIAS_TO_REAL_TYPE.put("callable", "collections.Callable");
     // 3 occurrences
     NUMPY_ALIAS_TO_REAL_TYPE.put("number", "int or long or float or complex");
+
+    NUMPY_ALIAS_TO_REAL_TYPE.put("sequence", "collections.Iterable");
   }
 
   @Nullable
@@ -100,17 +107,21 @@ public class NumpyDocStringTypeProvider extends PyTypeProviderBase {
 
   @Nullable
   @Override
-  public PyType getParameterType(@NotNull PyNamedParameter parameter, @NotNull PyFunction function, @NotNull TypeEvalContext context) {
+  public Ref<PyType> getParameterType(@NotNull PyNamedParameter parameter, @NotNull PyFunction function, @NotNull TypeEvalContext context) {
     if (isInsideNumPy(function)) {
       final String name = parameter.getName();
       if (name != null) {
-        return getParameterType(function, name);
+        final PyType type = getParameterType(function, name);
+        if (type != null) {
+          return Ref.create(type);
+        }
       }
     }
     return null;
   }
 
   private static boolean isInsideNumPy(@NotNull PsiElement element) {
+    if (ApplicationManager.getApplication().isUnitTestMode()) return true;
     final PsiFile file = element.getContainingFile();
     if (file != null) {
       final PyPsiFacade facade = getPsiFacade(element);
@@ -137,7 +148,31 @@ public class NumpyDocStringTypeProvider extends PyTypeProviderBase {
         return type;
       }
     }
-    return facade.parseTypeAnnotation(typeString, anchor);
+    final PyType type = facade.parseTypeAnnotation(typeString, anchor);
+    if (type != null) {
+      return type;
+    }
+    return getNominalType(anchor, typeString);
+  }
+
+  /**
+   * Converts literal into type, e.g. -1 -> int, 'fro' -> str
+   */
+  @Nullable
+  private static PyType getNominalType(@NotNull PsiElement anchor, @NotNull String typeString) {
+    final PyExpressionCodeFragmentImpl codeFragment = new PyExpressionCodeFragmentImpl(anchor.getProject(), "dummy.py", typeString, false);
+    final PsiElement element = codeFragment.getFirstChild();
+    if (element instanceof PyExpressionStatement) {
+      final PyExpression expression = ((PyExpressionStatement)element).getExpression();
+      final PyBuiltinCache builtinCache = PyBuiltinCache.getInstance(anchor);
+      if (expression instanceof PyStringLiteralExpression) {
+        return builtinCache.getStrType();
+      }
+      if (expression instanceof PyNumericLiteralExpression) {
+        return builtinCache.getIntType();
+      }
+    }
+    return null;
   }
 
   @Nullable
@@ -154,7 +189,7 @@ public class NumpyDocStringTypeProvider extends PyTypeProviderBase {
   }
 
   @Nullable
-  private PyType getParameterType(@NotNull PyFunction function, @NotNull String parameterName) {
+  private static PyType getParameterType(@NotNull PyFunction function, @NotNull String parameterName) {
     final NumPyDocString docString = NumPyDocString.forFunction(function, function);
     if (docString != null) {
       NumPyDocStringParameter parameter = docString.getNamedParameter(parameterName);
@@ -173,9 +208,12 @@ public class NumpyDocStringTypeProvider extends PyTypeProviderBase {
 
   @Nullable
   @Override
-  public PyType getReturnType(@NotNull PyCallable callable, @NotNull TypeEvalContext context) {
+  public Ref<PyType> getReturnType(@NotNull PyCallable callable, @NotNull TypeEvalContext context) {
     if (callable instanceof PyFunction) {
-      return getCallType((PyFunction)callable, null, context);
+      final PyType type = getCallType((PyFunction)callable, null, context);
+      if (type != null) {
+        return Ref.create(type);
+      }
     }
     return null;
   }

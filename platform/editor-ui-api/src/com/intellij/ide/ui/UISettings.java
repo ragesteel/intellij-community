@@ -86,7 +86,7 @@ public class UISettings extends SimpleModificationTracker implements PersistentS
   public boolean ALWAYS_SHOW_WINDOW_BUTTONS = false;
   public boolean CYCLE_SCROLLING = true;
   public boolean SCROLL_TAB_LAYOUT_IN_EDITOR = true;
-  public boolean HIDE_TABS_IF_NEED = false;
+  public boolean HIDE_TABS_IF_NEED = true;
   public boolean SHOW_CLOSE_BUTTON = true;
   public int EDITOR_TAB_PLACEMENT = 1;
   public boolean HIDE_KNOWN_EXTENSION_IN_TABS = false;
@@ -291,7 +291,6 @@ public class UISettings extends SimpleModificationTracker implements PersistentS
         g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
       }
     }
-    UIUtil.setHintingForLCDText(g2d);
   }
 
   /**

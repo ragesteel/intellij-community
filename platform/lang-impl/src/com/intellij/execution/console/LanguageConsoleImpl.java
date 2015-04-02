@@ -47,6 +47,7 @@ import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
+import com.intellij.psi.SingleRootFileViewProvider;
 import com.intellij.psi.impl.source.tree.injected.InjectedLanguageUtil;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.testFramework.LightVirtualFile;
@@ -465,7 +466,11 @@ public class LanguageConsoleImpl extends ConsoleViewImpl implements LanguageCons
   @Nullable
   @Override
   public Object getData(@NonNls String dataId) {
-    if (OpenFileDescriptor.NAVIGATE_IN_EDITOR.is(dataId)) {
+    Object data = super.getData(dataId);
+    if (data != null) {
+      return data;
+    }
+    else if (OpenFileDescriptor.NAVIGATE_IN_EDITOR.is(dataId)) {
       return myConsoleEditor;
     }
     else if (getProject().isInitialized()) {
@@ -549,7 +554,16 @@ public class LanguageConsoleImpl extends ConsoleViewImpl implements LanguageCons
 
   @NotNull
   protected PsiFile createFile(@NotNull Project project, @NotNull VirtualFile virtualFile) {
-    return ObjectUtils.assertNotNull(PsiManager.getInstance(project).findFile(virtualFile));
+    PsiFile file = PsiManager.getInstance(project).findFile(virtualFile);
+    if (file == null) {
+      Language language = new SingleRootFileViewProvider(PsiManager.getInstance(project), virtualFile).getBaseLanguage();
+      throw new AssertionError(String.format("no PSI for '%s'\nfile valid=%s, fileType=%s, language=%s",
+                                             virtualFile.getName(),
+                                             virtualFile.isValid(),
+                                             virtualFile.getFileType(),
+                                             language));
+    }
+    return file;
   }
 
   boolean isHistoryViewerForceAdditionalColumnsUsage() {

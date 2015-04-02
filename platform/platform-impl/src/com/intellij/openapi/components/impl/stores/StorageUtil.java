@@ -22,6 +22,7 @@ import com.intellij.notification.NotificationsManager;
 import com.intellij.openapi.application.AccessToken;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ApplicationNamesInfo;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.components.RoamingType;
 import com.intellij.openapi.components.StateStorage;
 import com.intellij.openapi.components.StoragePathMacros;
@@ -29,12 +30,12 @@ import com.intellij.openapi.components.TrackingPathMacroSubstitutor;
 import com.intellij.openapi.components.store.ReadOnlyModificationException;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.DocumentRunnable;
+import com.intellij.openapi.fileEditor.impl.LoadTextUtil;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectBundle;
 import com.intellij.openapi.project.ex.ProjectEx;
 import com.intellij.openapi.util.JDOMUtil;
 import com.intellij.openapi.util.Pair;
-import com.intellij.openapi.util.ThrowableComputable;
 import com.intellij.openapi.util.io.BufferExposingByteArrayOutputStream;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.text.StringUtil;
@@ -42,16 +43,14 @@ import com.intellij.openapi.vfs.CharsetToolkit;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileEvent;
-import com.intellij.util.ArrayUtil;
-import com.intellij.util.LineSeparator;
-import com.intellij.util.SmartList;
-import com.intellij.util.SystemProperties;
+import com.intellij.util.*;
 import com.intellij.util.containers.ContainerUtil;
 import com.intellij.util.ui.UIUtil;
 import org.jdom.Element;
 import org.jdom.Parent;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
 import javax.swing.event.HyperlinkEvent;
 import java.io.File;
@@ -121,46 +120,71 @@ public class StorageUtil {
   }
 
   @NotNull
-  public static VirtualFile writeFile(@Nullable final File file,
-                                      @NotNull final Object requestor,
-                                      @Nullable final VirtualFile virtualFile,
-                                      @NotNull final BufferExposingByteArrayOutputStream content,
-                                      @Nullable final LineSeparator lineSeparatorIfPrependXmlProlog) throws IOException {
+  public static VirtualFile writeFile(@Nullable File file,
+                                      @NotNull Object requestor,
+                                      @Nullable VirtualFile virtualFile,
+                                      @NotNull BufferExposingByteArrayOutputStream content,
+                                      @Nullable LineSeparator lineSeparatorIfPrependXmlProlog) throws IOException {
     final VirtualFile result;
     if (file != null && (virtualFile == null || !virtualFile.isValid())) {
-      result = getOrCreateVirtualFile(requestor, file);
+      result = getOrCreateVirtualFile(requestor, file.getAbsolutePath());
     }
     else {
       result = virtualFile;
+      assert result != null;
     }
-    assert result != null;
+
     boolean equals = isEqualContent(result, lineSeparatorIfPrependXmlProlog, content);
-    if (equals) return result;
-    return ApplicationManager.getApplication().runWriteAction(new ThrowableComputable<VirtualFile, IOException>() {
-      @Override
-      public VirtualFile compute() throws IOException {
-        try {
-          OutputStream out = result.getOutputStream(requestor);
-          try {
-            if (lineSeparatorIfPrependXmlProlog != null) {
-              out.write(XML_PROLOG);
-              out.write(lineSeparatorIfPrependXmlProlog.getSeparatorBytes());
-            }
-            content.writeTo(out);
-          }
-          finally {
-            out.close();
-          }
-          return result;
-        }
-        catch (FileNotFoundException e) {
-          if (virtualFile == null) {
-            throw e;
-          }
-          throw new ReadOnlyModificationException(virtualFile, e);
-        }
+    if (equals) {
+      LOG.warn("Content equals, but it must be handled not on this level — " + result.getName());
+    }
+    else {
+      if (ApplicationManager.getApplication().isUnitTestMode() && DEBUG_LOG != null) {
+        DEBUG_LOG = result.getPath() + ":\n" + content+"\nOld Content:\n"+ LoadTextUtil.loadText(result)+"\n---------";
       }
-    });
+      doWrite(requestor, result, virtualFile, content, lineSeparatorIfPrependXmlProlog);
+    }
+    return result;
+  }
+
+  @TestOnly
+  public static String DEBUG_LOG = "";
+
+  private static void doWrite(@NotNull final Object requestor,
+                              @NotNull final VirtualFile file,
+                              @Nullable final VirtualFile proposedFile,
+                              @NotNull final BufferExposingByteArrayOutputStream content,
+                              @Nullable final LineSeparator lineSeparatorIfPrependXmlProlog) throws IOException {
+    AccessToken token = WriteAction.start();
+    try {
+      OutputStream out = file.getOutputStream(requestor);
+      try {
+        if (lineSeparatorIfPrependXmlProlog != null) {
+          out.write(XML_PROLOG);
+          out.write(lineSeparatorIfPrependXmlProlog.getSeparatorBytes());
+        }
+        content.writeTo(out);
+      }
+      finally {
+        out.close();
+      }
+    }
+    catch (FileNotFoundException e) {
+      if (proposedFile == null) {
+        throw e;
+      }
+      else {
+        throw new ReadOnlyModificationException(proposedFile, e, new StateStorage.SaveSession() {
+          @Override
+          public void save() throws IOException {
+            doWrite(requestor, file, proposedFile, content, lineSeparatorIfPrependXmlProlog);
+          }
+        });
+      }
+    }
+    finally {
+      token.finish();
+    }
   }
 
   private static boolean isEqualContent(VirtualFile result,
@@ -187,7 +211,7 @@ public class StorageUtil {
     return equals;
   }
 
-  public static void deleteFile(@NotNull File file, @NotNull Object requestor, @Nullable VirtualFile virtualFile) throws IOException {
+  public static void deleteFile(@NotNull File file, @NotNull final Object requestor, @Nullable final VirtualFile virtualFile) throws IOException {
     if (virtualFile == null) {
       LOG.warn("Cannot find virtual file " + file.getAbsolutePath());
     }
@@ -198,7 +222,17 @@ public class StorageUtil {
       }
     }
     else if (virtualFile.exists()) {
-      deleteFile(requestor, virtualFile);
+      try {
+        deleteFile(requestor, virtualFile);
+      }
+      catch (FileNotFoundException e) {
+        throw new ReadOnlyModificationException(virtualFile, e, new StateStorage.SaveSession() {
+          @Override
+          public void save() throws IOException {
+            deleteFile(requestor, virtualFile);
+          }
+        });
+      }
     }
   }
 
@@ -206,9 +240,6 @@ public class StorageUtil {
     AccessToken token = ApplicationManager.getApplication().acquireWriteActionLock(DocumentRunnable.IgnoreDocumentRunnable.class);
     try {
       virtualFile.delete(requestor);
-    }
-    catch (FileNotFoundException e) {
-      throw new ReadOnlyModificationException(virtualFile, e);
     }
     finally {
       token.finish();
@@ -223,25 +254,31 @@ public class StorageUtil {
   }
 
   @NotNull
-  public static VirtualFile getOrCreateVirtualFile(@Nullable final Object requestor, @NotNull final File ioFile) throws IOException {
-    VirtualFile virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(ioFile);
-    if (virtualFile == null) {
-      File parentFile = ioFile.getParentFile();
-      // need refresh if the directory has just been created
-      final VirtualFile parentVirtualFile = parentFile == null ? null : LocalFileSystem.getInstance().refreshAndFindFileByIoFile(parentFile);
-      if (parentVirtualFile == null) {
-        throw new IOException(ProjectBundle.message("project.configuration.save.file.not.found", parentFile == null ? "" : parentFile.getPath()));
-      }
-      boolean underWriteAction = ApplicationManager.getApplication().isWriteAccessAllowed();
-      virtualFile = underWriteAction ? parentVirtualFile.createChildData(requestor, ioFile.getName()) :
-                    ApplicationManager.getApplication().runWriteAction(new ThrowableComputable<VirtualFile, IOException>() {
-                      @Override
-                      public VirtualFile compute() throws IOException {
-                        return parentVirtualFile.createChildData(requestor, ioFile.getName());
-                      }
-                    });
+  public static VirtualFile getOrCreateVirtualFile(@Nullable Object requestor, @NotNull String path) throws IOException {
+    VirtualFile virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(path);
+    if (virtualFile != null) {
+      return virtualFile;
     }
-    return virtualFile;
+
+    String parentFile = PathUtilRt.getParentPath(path);
+    // need refresh if the directory has just been created
+    VirtualFile parentVirtualFile = StringUtil.isEmpty(parentFile) ? null : LocalFileSystem.getInstance().refreshAndFindFileByPath(parentFile);
+    if (parentVirtualFile == null) {
+      throw new IOException(ProjectBundle.message("project.configuration.save.file.not.found", parentFile));
+    }
+
+    if (ApplicationManager.getApplication().isWriteAccessAllowed()) {
+      return parentVirtualFile.createChildData(requestor, PathUtilRt.getFileName(path));
+    }
+    else {
+      AccessToken token = WriteAction.start();
+      try {
+        return parentVirtualFile.createChildData(requestor, PathUtilRt.getFileName(path));
+      }
+      finally {
+        token.finish();
+      }
+    }
   }
 
   /**

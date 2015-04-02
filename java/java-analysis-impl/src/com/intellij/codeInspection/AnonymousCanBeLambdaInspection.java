@@ -36,10 +36,7 @@ import com.intellij.psi.controlFlow.ControlFlowUtil;
 import com.intellij.psi.impl.source.resolve.DefaultParameterTypeInferencePolicy;
 import com.intellij.psi.impl.source.resolve.graphInference.FunctionalInterfaceParameterizationUtil;
 import com.intellij.psi.infos.MethodCandidateInfo;
-import com.intellij.psi.util.InheritanceUtil;
-import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.psi.util.PsiTypesUtil;
-import com.intellij.psi.util.PsiUtil;
+import com.intellij.psi.util.*;
 import com.intellij.util.ArrayUtilRt;
 import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
@@ -241,10 +238,10 @@ public class AnonymousCanBeLambdaInspection extends BaseJavaBatchLocalInspection
       final ForbiddenRefsChecker checker = new ForbiddenRefsChecker(method, anonymousClass);
       body.accept(checker);
 
-      PsiResolveHelper helper = PsiResolveHelper.SERVICE.getInstance(body.getProject());
-      final Set<PsiLocalVariable> conflictingLocals = checker.getLocals();
-      for (Iterator<PsiLocalVariable> iterator = conflictingLocals.iterator(); iterator.hasNext(); ) {
-        PsiLocalVariable local = iterator.next();
+      final PsiResolveHelper helper = PsiResolveHelper.SERVICE.getInstance(body.getProject());
+      final Set<PsiVariable> conflictingLocals = checker.getLocals();
+      for (Iterator<PsiVariable> iterator = conflictingLocals.iterator(); iterator.hasNext(); ) {
+        PsiVariable local = iterator.next();
         final String localName = local.getName();
         if (localName == null || helper.resolveReferencedVariable(localName, anonymousClass) == null) {
           iterator.remove();
@@ -255,7 +252,7 @@ public class AnonymousCanBeLambdaInspection extends BaseJavaBatchLocalInspection
       final PsiElementFactory elementFactory = JavaPsiFacade.getElementFactory(project);
 
       ReplaceWithLambdaFix
-        .giveUniqueNames(project, lambdaContext, elementFactory, body, conflictingLocals.toArray(new PsiVariable[conflictingLocals.size()]));
+        .giveUniqueNames(project, anonymousClass, elementFactory, body, conflictingLocals.toArray(new PsiVariable[conflictingLocals.size()]));
 
       final String lambdaWithTypesDeclared = ReplaceWithLambdaFix.composeLambdaText(method, true);
       final String withoutTypesDeclared = ReplaceWithLambdaFix.composeLambdaText(method, false);
@@ -353,7 +350,7 @@ public class AnonymousCanBeLambdaInspection extends BaseJavaBatchLocalInspection
       final Map<PsiVariable, String> names = new HashMap<PsiVariable, String>();
       for (PsiVariable parameter : parameters) {
         String parameterName = parameter.getName();
-        final String uniqueVariableName = codeStyleManager.suggestUniqueVariableName(parameterName, lambdaContext, false);
+        final String uniqueVariableName = codeStyleManager.suggestUniqueVariableName(parameterName, parameter.getParent(), false);
         if (!Comparing.equal(parameterName, uniqueVariableName)) {
           names.put(parameter, uniqueVariableName);
         }
@@ -454,19 +451,20 @@ public class AnonymousCanBeLambdaInspection extends BaseJavaBatchLocalInspection
 
   private static class ForbiddenRefsChecker extends JavaRecursiveElementWalkingVisitor {
     private boolean myBodyContainsForbiddenRefs;
-    private final Set<PsiLocalVariable> myLocals = ContainerUtilRt.newHashSet(5);
+    private final Set<PsiVariable> myLocals = ContainerUtilRt.newHashSet(5);
 
     private final PsiMethod myMethod;
     private final PsiAnonymousClass myAnonymClass;
 
-    private final boolean myEqualInference;
+    private final PsiType myInferredType;
 
     public ForbiddenRefsChecker(PsiMethod method,
                                 PsiAnonymousClass aClass) {
       myMethod = method;
       myAnonymClass = aClass;
       final PsiType inferredType = FunctionalInterfaceParameterizationUtil.getGroundTargetType(getInferredType(aClass));
-      myEqualInference = !aClass.getBaseClassType().equals(inferredType); 
+      final PsiClassType baseClassType = aClass.getBaseClassType();
+      myInferredType = !baseClassType.equals(inferredType) ? inferredType : null;
     }
 
     @Override
@@ -504,11 +502,13 @@ public class AnonymousCanBeLambdaInspection extends BaseJavaBatchLocalInspection
     }
 
     @Override
-    public void visitLocalVariable(PsiLocalVariable variable) {
+    public void visitVariable(PsiVariable variable) {       
       if (myBodyContainsForbiddenRefs) return;
 
-      super.visitLocalVariable(variable);
-      myLocals.add(variable);
+      super.visitVariable(variable);
+      if (!(variable instanceof PsiField)) {
+        myLocals.add(variable);
+      }
     }
 
     @Override
@@ -557,14 +557,31 @@ public class AnonymousCanBeLambdaInspection extends BaseJavaBatchLocalInspection
         }
       }
 
-      if (myEqualInference) {
+      if (myInferredType != null) {
         final PsiElement resolved = expression.resolve();
         if (resolved instanceof PsiParameter && ((PsiParameter)resolved).getDeclarationScope() == myMethod) {
+          if (!(myInferredType instanceof PsiClassType)) {
+            myBodyContainsForbiddenRefs = true;
+            return;
+          }
           final int parameterIndex = myMethod.getParameterList().getParameterIndex((PsiParameter)resolved);
           for (PsiMethod superMethod : myMethod.findDeepestSuperMethods()) {
-            if (PsiUtil.resolveClassInType(superMethod.getParameterList().getParameters()[parameterIndex].getType()) instanceof PsiTypeParameter) {
-              myBodyContainsForbiddenRefs = true;
-              return;
+            final PsiType paramType = superMethod.getParameterList().getParameters()[parameterIndex].getType();
+            final PsiClass superClass = superMethod.getContainingClass();
+            if (superClass != null) {
+              final PsiClassType.ClassResolveResult classResolveResult = ((PsiClassType)myInferredType).resolveGenerics();
+              final PsiClass classCandidate = classResolveResult.getElement();
+              if (classCandidate == null) {
+                myBodyContainsForbiddenRefs = true;
+                return;
+              }
+              final PsiSubstitutor inferredSubstitutor = TypeConversionUtil.getClassSubstitutor(superClass, classCandidate, classResolveResult.getSubstitutor());
+              final PsiSubstitutor substitutor = TypeConversionUtil.getSuperClassSubstitutor(superClass, myAnonymClass.getBaseClassType());
+              if (inferredSubstitutor != null &&
+                  !Comparing.equal(inferredSubstitutor.substitute(paramType), substitutor.substitute(paramType))) {
+                myBodyContainsForbiddenRefs = true;
+                return;
+              }
             }
           }
         }
@@ -575,7 +592,7 @@ public class AnonymousCanBeLambdaInspection extends BaseJavaBatchLocalInspection
       return myBodyContainsForbiddenRefs;
     }
 
-    public Set<PsiLocalVariable> getLocals() {
+    public Set<PsiVariable> getLocals() {
       return myLocals;
     }
   }

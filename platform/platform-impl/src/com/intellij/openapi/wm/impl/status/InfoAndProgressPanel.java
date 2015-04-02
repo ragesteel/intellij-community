@@ -174,7 +174,7 @@ public class InfoAndProgressPanel extends JPanel implements CustomStatusBarWidge
     setRefreshVisible(false);
     InlineProgressIndicator[] indicators = getCurrentInlineIndicators().toArray(new InlineProgressIndicator[0]);
     for (InlineProgressIndicator indicator : indicators) {
-      Disposer.dispose(indicator);
+      removeProgress(indicator);
     }
     myInline2Original.clear();
     myOriginal2Inlines.clear();
@@ -264,6 +264,8 @@ public class InfoAndProgressPanel extends JPanel implements CustomStatusBarWidge
 
       runQuery();
     }
+    Disposer.dispose(progress);
+
   }
 
   private ProgressIndicatorEx removeFromMaps(@NotNull InlineProgressIndicator progress) {
@@ -584,6 +586,11 @@ public class InfoAndProgressPanel extends JPanel implements CustomStatusBarWidge
     add(myRefreshAndInfoPanel, BorderLayout.CENTER);
 
     myProgressIcon.suspend();
+    Container iconParent = myProgressIcon.getParent();
+    if (iconParent != null) {
+      iconParent.remove(myProgressIcon); // to prevent leaks to this removed parent via progress icon
+    }
+
     myRefreshAndInfoPanel.revalidate();
     myRefreshAndInfoPanel.repaint();
   }
@@ -642,7 +649,6 @@ public class InfoAndProgressPanel extends JPanel implements CustomStatusBarWidge
         @Override
         public void run() {
           removeProgress(MyInlineProgressIndicator.this);
-          Disposer.dispose(MyInlineProgressIndicator.this);
         }
       });
     }

@@ -544,6 +544,10 @@ public class JBTabsImpl extends JComponent
     myFirstTabOffset = firstTabOffset;
   }
 
+  public int tabMSize() {
+    return 20;
+  }
+
   class TabActionsAutoHideListener extends MouseMotionAdapter implements Weighted {
 
     private TabLabel myCurrentOverLabel;
@@ -1569,13 +1573,6 @@ public class JBTabsImpl extends JComponent
     final Insets border = isHideTabs() ? new Insets(0, 0, 0, 0) : myBorder.getEffectiveBorder();
     final boolean noTabsVisible = isStealthModeEffective() || isHideTabs();
 
-    if (noTabsVisible) {
-      border.top = getBorder(-1);
-      border.bottom = getBorder(-1);
-      border.left = getBorder(-1);
-      border.right = getBorder(-1);
-    }
-
     final Insets inner = getInnerInsets();
     border.top += inner.top;
     border.bottom += inner.bottom;
@@ -2097,7 +2094,7 @@ public class JBTabsImpl extends JComponent
 
   @Override
   public Color getBackground() {
-    return UIUtil.isUnderNimbusLookAndFeel() ? UIUtil.getPanelBackground() : super.getBackground();
+    return UIUtil.isUnderNimbusLookAndFeel() ? UIUtil.getPanelBackground() : UIUtil.getBgFillColor(getParent());
   }
 
   protected void doPaintInactive(Graphics2D g2d,

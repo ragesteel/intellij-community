@@ -71,6 +71,8 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
+import static com.intellij.diff.util.DiffUtil.getLineCount;
+
 public class OnesideDiffViewer extends TextDiffViewerBase {
   public static final Logger LOG = Logger.getInstance(OnesideDiffViewer.class);
 
@@ -88,7 +90,7 @@ public class OnesideDiffViewer extends TextDiffViewerBase {
   @NotNull private final MyScrollToLineHelper myScrollToLineHelper = new MyScrollToLineHelper();
   @NotNull private final MyFoldingModel myFoldingModel;
 
-  @NotNull protected Side myMasterSide = Side.LEFT;
+  @NotNull protected Side myMasterSide = Side.RIGHT;
 
   @Nullable private ChangedBlockData myChangedBlockData;
 
@@ -575,9 +577,16 @@ public class OnesideDiffViewer extends TextDiffViewerBase {
       return myActualContent2.getOpenFileDescriptor(offset);
     }
 
-    Pair<int[], Side> pair = transferLineFromOneside(myEditor.offsetToLogicalPosition(offset).line);
-    OpenFileDescriptor descriptor1 = myActualContent1.getOpenFileDescriptor(offset);
-    OpenFileDescriptor descriptor2 = myActualContent2.getOpenFileDescriptor(offset);
+    LogicalPosition position = myEditor.offsetToLogicalPosition(offset);
+    Pair<int[], Side> pair = transferLineFromOneside(position.line);
+    int offset1 = DiffUtil.getOffset(myActualContent1.getDocument(), pair.first[0], position.column);
+    int offset2 = DiffUtil.getOffset(myActualContent2.getDocument(), pair.first[1], position.column);
+
+    // TODO: issue: non-optimal GoToSource position with caret on deleted block for "Compare with local"
+    //       we should transfer using calculated diff, not jump to "somehow related" position from old content's descriptor
+
+    OpenFileDescriptor descriptor1 = myActualContent1.getOpenFileDescriptor(offset1);
+    OpenFileDescriptor descriptor2 = myActualContent2.getOpenFileDescriptor(offset2);
     if (descriptor1 == null) return descriptor2;
     if (descriptor2 == null) return descriptor1;
     return pair.second.select(descriptor1, descriptor2);
@@ -998,7 +1007,7 @@ public class OnesideDiffViewer extends TextDiffViewerBase {
           DiffUtil.scrollToPoint(myEditor, myEditorPosition.myPoints[0]);
         }
         else {
-          myEditor.getScrollingModel().scrollToCaret(ScrollType.CENTER);
+          DiffUtil.scrollToCaret(myEditor);
         }
         myShouldScroll = false;
       }

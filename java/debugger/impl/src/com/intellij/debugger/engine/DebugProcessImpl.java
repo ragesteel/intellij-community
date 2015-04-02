@@ -56,7 +56,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Pair;
-import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.UserDataHolderBase;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.ToolWindowId;
@@ -89,6 +88,7 @@ import javax.swing.*;
 import java.io.IOException;
 import java.net.UnknownHostException;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public abstract class DebugProcessImpl extends UserDataHolderBase implements DebugProcess {
@@ -114,7 +114,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
   protected static final int STATE_DETACHED  = 3;
   protected final AtomicInteger myState = new AtomicInteger(STATE_INITIAL);
 
-  private ExecutionResult myExecutionResult;
+  private volatile ExecutionResult myExecutionResult;
   private RemoteConnection myConnection;
   private JavaDebugProcess myXDebugProcess;
 
@@ -1077,7 +1077,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
                   }
                 }
               }
-              
+
               if (!Patches.IBM_JDK_DISABLE_COLLECTION_BUG) {
                 // ensure args are not collected
                 for (Object arg : myArgs) {
@@ -1086,7 +1086,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
                   }
                 }
               }
-              result[0] = invokeMethod(invokePolicy, myMethod , myArgs);
+              result[0] = invokeMethod(invokePolicy, myMethod, myArgs);
             }
             finally {
               //  assertThreadSuspended(thread, context);
@@ -1123,7 +1123,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
           throw (RuntimeException)exception[0];
         }
         else {
-          LOG.error("Unexpected exception " + exception[0]);
+          LOG.error("Unexpected exception", new Throwable().initCause(exception[0]));
         }
       }
 
@@ -1852,7 +1852,7 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
     final Semaphore semaphore = new Semaphore();
     semaphore.down();
 
-    final Ref<Boolean> connectorIsReady = Ref.create(false);
+    final AtomicBoolean connectorIsReady = new AtomicBoolean(false);
     myDebugProcessDispatcher.addListener(new DebugProcessAdapter() {
       @Override
       public void connectorIsReady() {
@@ -1890,17 +1890,17 @@ public abstract class DebugProcessImpl extends UserDataHolderBase implements Deb
               }
               else {
                 fail();
-                if (myExecutionResult != null || !connectorIsReady.get()) {
-                  // propagate exception only in case we succeeded to obtain execution result,
-                  // otherwise if the error is induced by the fact that there is nothing to debug, and there is no need to show
-                  // this problem to the user
-                  SwingUtilities.invokeLater(new Runnable() {
-                    @Override
-                    public void run() {
+                DebuggerInvocationUtil.swingInvokeLater(myProject, new Runnable() {
+                  @Override
+                  public void run() {
+                    // propagate exception only in case we succeeded to obtain execution result,
+                    // otherwise if the error is induced by the fact that there is nothing to debug, and there is no need to show
+                    // this problem to the user
+                    if (myExecutionResult != null || !connectorIsReady.get()) {
                       ExecutionUtil.handleExecutionError(myProject, ToolWindowId.DEBUG, sessionName, e);
                     }
-                  });
-                }
+                  }
+                });
                 break;
               }
             }

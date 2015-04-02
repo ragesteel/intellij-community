@@ -17,6 +17,7 @@ package com.intellij.openapi.application.impl;
 
 import com.intellij.BundleBase;
 import com.intellij.CommonBundle;
+import com.intellij.diagnostic.PerformanceWatcher;
 import com.intellij.diagnostic.ThreadDumper;
 import com.intellij.ide.*;
 import com.intellij.ide.plugins.IdeaPluginDescriptor;
@@ -61,6 +62,7 @@ import com.intellij.openapi.wm.WindowManager;
 import com.intellij.psi.PsiLock;
 import com.intellij.ui.Splash;
 import com.intellij.util.*;
+import com.intellij.util.concurrency.Semaphore;
 import com.intellij.util.containers.Stack;
 import com.intellij.util.io.storage.HeavyProcessLatch;
 import com.intellij.util.ui.UIUtil;
@@ -118,6 +120,8 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   private final Disposable myLastDisposable = Disposer.newDisposable(); // will be disposed last
 
   private final AtomicBoolean mySaveSettingsIsInProgress = new AtomicBoolean(false);
+  @SuppressWarnings({"UseOfArchaicSystemPropertyAccessors"})
+  private static final int ourDumpThreadsOnLongWriteActionWaiting = Integer.getInteger("dump.threads.on.long.write.action.waiting", 0);
 
   private final ExecutorService ourThreadExecutorsService = PooledThreadExecutor.INSTANCE;
   private boolean myIsFiringLoadingEvent = false;
@@ -425,7 +429,7 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
     return ourThreadExecutorsService.submit(new Callable<T>() {
       @Override
       public T call() {
-        assert !isReadAccessAllowed(): describe(Thread.currentThread());
+        assert !isReadAccessAllowed() : describe(Thread.currentThread());
         try {
           return action.call();
         }
@@ -438,7 +442,7 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
         finally {
           //ReflectionUtil.resetThreadLocals();
           Thread.interrupted(); // reset interrupted status
-          assert !isReadAccessAllowed(): describe(Thread.currentThread());
+          assert !isReadAccessAllowed() : describe(Thread.currentThread());
         }
         return null;
       }
@@ -639,6 +643,68 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
     progress.startBlocking();
 
     LOG.assertTrue(threadStarted.get());
+    LOG.assertTrue(!progress.isRunning());
+
+    return !progress.isCanceled();
+  }
+
+
+  @Override
+  public boolean runProcessWithProgressSynchronouslyInReadAction(@Nullable final Project project, @NotNull final String progressTitle,
+                                                                 final boolean canBeCanceled,
+                                                                 final String cancelText, final JComponent parentComponent,
+                                                                 @NotNull final Runnable process) {
+    assertIsDispatchThread();
+    boolean writeAccessAllowed = isInsideWriteActionEDTOnly();
+    if (writeAccessAllowed // Disallow running process in separate thread from under write action.
+                           // The thread will deadlock trying to get read action otherwise.
+      ) {
+      throw new IncorrectOperationException("Starting process with progress from within write action makes no sense");
+    }
+
+    final ProgressWindow progress = new ProgressWindow(canBeCanceled, false, project, parentComponent, cancelText);
+    // in case of abrupt application exit when 'ProgressManager.getInstance().runProcess(process, progress)' below
+    // does not have a chance to run, and as a result the progress won't be disposed
+    Disposer.register(this, progress);
+
+    progress.setTitle(progressTitle);
+
+    final Semaphore readActionAcquired = new Semaphore();
+    readActionAcquired.down();
+    final Semaphore modalityEntered = new Semaphore();
+    modalityEntered.down();
+    executeOnPooledThread(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          ApplicationManager.getApplication().runReadAction(new Runnable() {
+            @Override
+            public void run() {
+              readActionAcquired.up();
+              modalityEntered.waitFor();
+              ProgressManager.getInstance().runProcess(process, progress);
+            }
+          });
+        }
+        catch (ProcessCanceledException e) {
+          progress.cancel();
+          // ok to ignore.
+        }
+        catch (RuntimeException e) {
+          progress.cancel();
+          throw e;
+        }
+      }
+    });
+
+    readActionAcquired.waitFor();
+    progress.startBlocking(new Runnable() {
+      @Override
+      public void run() {
+        modalityEntered.up();
+      }
+    });
+
     LOG.assertTrue(!progress.isRunning());
 
     return !progress.isCanceled();
@@ -1175,7 +1241,24 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
         if (!isWriteAccessAllowed()) {
           assertNoPsiLock();
         }
-        myLock.writeLock().lockInterruptibly();
+        if (!myLock.writeLock().tryLock()) {
+          final AtomicBoolean lockAcquired = new AtomicBoolean(false);
+          if (ourDumpThreadsOnLongWriteActionWaiting > 0) {
+            executeOnPooledThread(new Runnable() {
+              @Override
+              public void run() {
+                while (!lockAcquired.get()) {
+                  TimeoutUtil.sleep(ourDumpThreadsOnLongWriteActionWaiting);
+                  if (!lockAcquired.get()) {
+                    PerformanceWatcher.getInstance().dumpThreads("waiting", true);
+                  }
+                }
+              }
+            });
+          }
+          myLock.writeLock().lockInterruptibly();
+          lockAcquired.set(true);
+        }
       }
       catch (InterruptedException e) {
         throw new RuntimeInterruptedException(e);

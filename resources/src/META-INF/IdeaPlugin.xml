@@ -638,7 +638,7 @@
                      groupName="Declaration redundancy" enabledByDefault="false" level="WARNING" cleanupTool="true"
                      implementationClass="com.intellij.codeInspection.unneededThrows.RedundantThrowsDeclaration" />
     <localInspection groupPath="Java" language="JAVA" shortName="AccessStaticViaInstance" bundle="messages.InspectionsBundle" key="access.static.via.instance" groupName="Declaration redundancy"
-                     enabledByDefault="true" level="WARNING" cleanupTool="true"
+                     enabledByDefault="true" level="WARNING" cleanupTool="true" alternativeId="static-access"
                      implementationClass="com.intellij.codeInspection.accessStaticViaInstance.AccessStaticViaInstance" />
     <localInspection shortName="DefaultFileTemplate" bundle="messages.InspectionsBundle" key="default.file.template.display.name"
                      groupName="General" enabledByDefault="true" level="WARNING"
@@ -723,6 +723,11 @@
                      groupName="Code style issues" enabledByDefault="false" level="WARNING"
                      implementationClass="com.intellij.codeInspection.java18StreamApi.StaticPseudoFunctionalStyleMethodInspection"
                      displayName="Pseudo functional expression using static class"/>
+    <localInspection groupPath="Java" language="JAVA" shortName="StringTokenizerDelimiter"
+                     groupBundle="messages.InspectionsBundle"
+                     groupName="Probable bugs" enabledByDefault="true" level="WARNING"
+                     implementationClass="com.intellij.codeInspection.StringTokenizerDelimiterInspection"
+                     displayName="Duplicated delimiters in java.util.StringTokenizer"/>
 
     <intentionAction>
       <className>com.intellij.codeInsight.daemon.quickFix.RedundantLambdaParameterTypeIntention</className>
@@ -1156,6 +1161,7 @@
     <extendWordSelectionHandler implementation="com.intellij.codeInsight.editorActions.wordSelection.StatementGroupSelectioner"/>
     <extendWordSelectionHandler implementation="com.intellij.codeInsight.editorActions.wordSelection.CaseStatementsSelectioner"/>
     <extendWordSelectionHandler implementation="com.intellij.codeInsight.editorActions.wordSelection.AntLikePropertySelectionHandler"/>
+    <extendWordSelectionHandler implementation="com.intellij.codeInsight.editorActions.wordSelection.MethodCallSelectioner"/>
 
     <structureViewBuilder key="CLASS" factoryClass="com.intellij.ide.highlighter.JavaClsStructureViewBuilderProvider"/>
 

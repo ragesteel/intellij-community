@@ -729,6 +729,10 @@ public class PyUtil {
     return currentElement;
   }
 
+  /**
+   * Note that returned list may contain {@code null} items, e.g. for unresolved import elements, originally wrapped
+   * in {@link com.jetbrains.python.psi.resolve.ImportedResolveResult}.
+   */
   @NotNull
   public static List<PsiElement> multiResolveTopPriority(@NotNull PsiElement element, @NotNull PyResolveContext resolveContext) {
     if (element instanceof PyReferenceOwner) {
@@ -1596,6 +1600,20 @@ public class PyUtil {
       }
     }
     return element;
+  }
+
+  /**
+   * Removes given element substituting if with {@code pass} to avoid empty statement list.
+   */
+  public static void deleteElementSafely(@NotNull PsiElement element) {
+    if (element instanceof PyStatement) {
+      final PyStatementList statementList = as(element.getParent(), PyStatementList.class);
+      if (statementList != null && statementList.getStatements().length == 1) {
+        element.replace(PyElementGenerator.getInstance(element.getProject()).createPassStatement());
+        return;
+      }
+    }
+    element.delete();
   }
 
   @NotNull

@@ -43,11 +43,26 @@ fi
 OS_TYPE=`"$UNAME" -s`
 
 # ---------------------------------------------------------------------
+# Ensure IDE_HOME points to the directory where the IDE is installed.
+# ---------------------------------------------------------------------
+SCRIPT_LOCATION=$0
+if [ -x "$READLINK" ]; then
+  while [ -L "$SCRIPT_LOCATION" ]; do
+    SCRIPT_LOCATION=`"$READLINK" -e "$SCRIPT_LOCATION"`
+  done
+fi
+
+IDE_HOME=`dirname "$SCRIPT_LOCATION"`/..
+IDE_BIN_HOME=`dirname "$SCRIPT_LOCATION"`
+
+# ---------------------------------------------------------------------
 # Locate a JDK installation directory which will be used to run the IDE.
-# Try (in order): @@product_uc@@_JDK, JDK_HOME, JAVA_HOME, "java" in PATH.
+# Try (in order): @@product_uc@@_JDK, ../jre, JDK_HOME, JAVA_HOME, "java" in PATH.
 # ---------------------------------------------------------------------
 if [ -n "$@@product_uc@@_JDK" -a -x "$@@product_uc@@_JDK/bin/java" ]; then
   JDK="$@@product_uc@@_JDK"
+elif [ -x "$IDE_HOME/jre/bin/java" ] && "$IDE_HOME/jre/bin/java" -version > /dev/null 2>&1 ; then
+  JDK="$IDE_HOME/jre"
 elif [ -n "$JDK_HOME" -a -x "$JDK_HOME/bin/java" ]; then
   JDK="$JDK_HOME"
 elif [ -n "$JAVA_HOME" -a -x "$JAVA_HOME/bin/java" ]; then
@@ -109,19 +124,6 @@ else
 fi
 
 # ---------------------------------------------------------------------
-# Ensure IDE_HOME points to the directory where the IDE is installed.
-# ---------------------------------------------------------------------
-SCRIPT_LOCATION=$0
-if [ -x "$READLINK" ]; then
-  while [ -L "$SCRIPT_LOCATION" ]; do
-    SCRIPT_LOCATION=`"$READLINK" -e "$SCRIPT_LOCATION"`
-  done
-fi
-
-IDE_HOME=`dirname "$SCRIPT_LOCATION"`/..
-IDE_BIN_HOME=`dirname "$SCRIPT_LOCATION"`
-
-# ---------------------------------------------------------------------
 # Collect JVM options and properties.
 # ---------------------------------------------------------------------
 if [ -n "$@@product_uc@@_PROPERTIES" ]; then
@@ -165,19 +167,18 @@ fi
 # ---------------------------------------------------------------------
 # Run the IDE.
 # ---------------------------------------------------------------------
-while true ; do
-  LD_LIBRARY_PATH="$IDE_BIN_HOME:$LD_LIBRARY_PATH" "$JDK/bin/java" \
-    $AGENT \
-    "-Xbootclasspath/a:$IDE_HOME/lib/boot.jar" \
-    -classpath "$CLASSPATH" \
-    $VM_OPTIONS "-Djb.vmOptionsFile=$VM_OPTIONS_FILES_USED" \
-    "-XX:ErrorFile=$HOME/java_error_in_@@product_uc@@_%p.log" \
-    -Djb.restart.code=88 -Didea.paths.selector=@@system_selector@@ \
-    $IDE_PROPERTIES_PROPERTY \
-    $IDE_JVM_ARGS \
-    $REQUIRED_JVM_ARGS \
-    $MAIN_CLASS_NAME \
-    "$@"
-  EC=$?
-  test $EC -ne 88 && exit $EC
-done
+LD_LIBRARY_PATH="$IDE_BIN_HOME:$LD_LIBRARY_PATH" "$JDK/bin/java" \
+  $AGENT \
+  "-Xbootclasspath/a:$IDE_HOME/lib/boot.jar" \
+  -classpath "$CLASSPATH" \
+  $VM_OPTIONS "-Djb.vmOptionsFile=$VM_OPTIONS_FILES_USED" \
+  "-XX:ErrorFile=$HOME/java_error_in_@@product_uc@@_%p.log" \
+  -Djb.restart.code=88 -Didea.paths.selector=@@system_selector@@ \
+  $IDE_PROPERTIES_PROPERTY \
+  $IDE_JVM_ARGS \
+  $REQUIRED_JVM_ARGS \
+  $MAIN_CLASS_NAME \
+  "$@"
+EC=$?
+test $EC -ne 88 && exit $EC
+exec "$0" "$@"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2000-2014 JetBrains s.r.o.
+ * Copyright 2000-2015 JetBrains s.r.o.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,9 @@ import java.awt.*;
 /**
  * @author Konstantin Bulenkov
  */
-abstract class JBEditorTabsPainter {
+public abstract class JBEditorTabsPainter {
+  protected Color myDefaultTabColor;
+
   public abstract void doPaintInactive(Graphics2D g2d,
                        Rectangle effectiveBounds,
                        int x,
@@ -83,7 +85,7 @@ abstract class JBEditorTabsPainter {
                                 selectedShape.labelPath.deltaY(4)));
     }
 
-    g2d.setColor(Gray._0.withAlpha(50));
+    g2d.setColor(Gray._0.withAlpha(15));
     g2d.draw(selectedShape.labelPath.transformLine(i.left, selectedShape.labelPath.getMaxY(),
                                                    selectedShape.path.getMaxX(),
                                                    selectedShape.labelPath.getMaxY()));
@@ -92,6 +94,10 @@ abstract class JBEditorTabsPainter {
   public abstract Color getBackgroundColor();
 
   public Color getEmptySpaceColor() {
-    return UIUtil.getPanelBackground();
+    return UIUtil.isUnderAquaLookAndFeel() ? Gray.xC8 : UIUtil.getPanelBackground();
+  }
+
+  public void setDefaultTabColor(Color color) {
+    myDefaultTabColor = color;
   }
 }

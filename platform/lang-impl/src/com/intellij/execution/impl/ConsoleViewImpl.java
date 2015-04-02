@@ -100,10 +100,14 @@ public class ConsoleViewImpl extends JPanel implements ConsoleView, ObservableCo
 
   public static final Key<ConsoleViewImpl> CONSOLE_VIEW_IN_EDITOR_VIEW = Key.create("CONSOLE_VIEW_IN_EDITOR_VIEW");
 
-  static {
+  private static boolean ourTypedHandlerInitialized;
+
+  private static synchronized void initTypedHandler() {
+    if (ourTypedHandlerInitialized) return;
     final EditorActionManager actionManager = EditorActionManager.getInstance();
     final TypedAction typedAction = actionManager.getTypedAction();
     typedAction.setupHandler(new MyTypedHandler(typedAction.getHandler()));
+    ourTypedHandlerInitialized = true;
   }
 
 
@@ -281,6 +285,7 @@ public class ConsoleViewImpl extends JPanel implements ConsoleView, ObservableCo
                             boolean usePredefinedMessageFilter)
   {
     super(new BorderLayout());
+    initTypedHandler();
     myIsViewer = viewer;
     myState = initialState;
     myPsiDisposedCheck = new DisposedPsiManagerCheck(project);
@@ -498,6 +503,19 @@ public class ConsoleViewImpl extends JPanel implements ConsoleView, ObservableCo
     return this;
   }
 
+  /**
+   * Adds transparent (actually, non-opaque) component over console.
+   * It will be as big as console. Use it to draw on console because it does not prevent user from console usage.
+   *
+   * @param component component to add
+   */
+  public final void addLayerToPane(@NotNull final JComponent component) {
+    getComponent(); // Make sure component exists
+    component.setOpaque(false);
+    component.setVisible(true);
+    myJLayeredPane.add(component, 0);
+  }
+
   protected void initConsoleEditor() {
     myEditor = createConsoleEditor();
     registerConsoleEditorActions();
@@ -511,9 +529,9 @@ public class ConsoleViewImpl extends JPanel implements ConsoleView, ObservableCo
         // are soft wrapped. We want to update viewport position then when the console becomes visible.
         Rectangle oldR = e.getOldRectangle();
 
-        if (!shouldPreserveCurrentVisualArea() &&
-            oldR != null && oldR.height <= 0 &&
-            e.getNewRectangle().height > 0) {
+        if (oldR != null && oldR.height <= 0 &&
+            e.getNewRectangle().height > 0 &&
+            !shouldPreserveCurrentVisualArea()) {
           scrollToEnd();
         }
       }
@@ -771,14 +789,15 @@ public class ConsoleViewImpl extends JPanel implements ConsoleView, ObservableCo
     }
 
     if (!preserveCurrentVisualArea) {
-      EditorUtil.scrollToTheEnd(myEditor);
+      scrollToEnd();
     }
   }
 
   private boolean shouldPreserveCurrentVisualArea() {
-    JScrollBar scrollBar = myEditor.getScrollPane().getVerticalScrollBar();
-    if (scrollBar.getVisibleAmount() == 0) return myLastPreserveVisualArea;
-    myLastPreserveVisualArea = scrollBar.getValue() + scrollBar.getVisibleAmount() != scrollBar.getMaximum();
+    if (myEditor == null) return myLastPreserveVisualArea;
+    Document document = myEditor.getDocument();
+    int caretOffset = myEditor.getCaretModel().getOffset();
+    myLastPreserveVisualArea = document.getLineNumber(caretOffset) < document.getLineCount() - 1;
     return myLastPreserveVisualArea;
   }
 

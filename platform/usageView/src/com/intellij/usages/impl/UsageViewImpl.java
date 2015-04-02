@@ -89,6 +89,7 @@ public class UsageViewImpl implements UsageView, UsageModelTracker.UsageModelTra
 
   private final UsageNodeTreeBuilder myBuilder;
   private final MyPanel myRootPanel;
+  @NotNull
   private final JTree myTree;
   private Content myContent;
 
@@ -293,7 +294,7 @@ public class UsageViewImpl implements UsageView, UsageModelTracker.UsageModelTra
       AbstractLayoutCache treeState = ReflectionUtil.getField(BasicTreeUI.class, ui, AbstractLayoutCache.class, "treeState");
       Rectangle visibleRect = myTree.getVisibleRect();
       int rowForLocation = myTree.getClosestRowForLocation(0, visibleRect.y);
-      int visibleRowCount = myTree.getVisibleRowCount();
+      int visibleRowCount = getVisibleRowCount();
       for (int i = rowForLocation + visibleRowCount + 1; i >= rowForLocation; i--) {
         final TreePath eachPath = myTree.getPathForRow(i);
         if (eachPath == null) continue;
@@ -306,6 +307,12 @@ public class UsageViewImpl implements UsageView, UsageModelTracker.UsageModelTra
       myTree.setCellRenderer(myUsageViewTreeCellRenderer);
     }
   }
+
+  private int getVisibleRowCount() {
+    // myTree.getVisibleRowCount returns 20
+    return TreeUtil.getVisibleRowCountForFixedRowHeight(myTree);
+  }
+
   private void setupCentralPanel() {
     myCentralPanel.removeAll();
     disposeUsageContextPanels();

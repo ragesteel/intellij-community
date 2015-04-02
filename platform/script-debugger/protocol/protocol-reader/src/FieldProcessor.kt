@@ -4,10 +4,11 @@ import gnu.trove.THashSet
 import org.jetbrains.jsonProtocol.JsonField
 import org.jetbrains.jsonProtocol.JsonOptionalField
 import org.jetbrains.jsonProtocol.JsonSubtypeCasting
-
 import java.lang.reflect.Method
 import java.lang.reflect.ParameterizedType
-import java.util.*
+import java.util.ArrayList
+import java.util.Arrays
+import java.util.LinkedHashMap
 
 class FieldProcessor(private val reader: InterfaceReader, typeClass: Class<*>) {
   val fieldLoaders = ArrayList<FieldLoader>()
@@ -15,10 +16,10 @@ class FieldProcessor(private val reader: InterfaceReader, typeClass: Class<*>) {
   val volatileFields = ArrayList<VolatileFieldBinding>()
   var lazyRead: Boolean = false
 
-  {
+  init {
     val methods = typeClass.getMethods()
     // todo sort by source location
-    Arrays.sort(methods, {(o1, o2) -> o1.getName().compareTo(o2.getName())})
+    Arrays.sort(methods, { o1, o2 -> o1.getName().compareTo(o2.getName()) })
 
     val skippedNames = THashSet<String>()
     for (method in methods) {
@@ -86,11 +87,11 @@ class FieldProcessor(private val reader: InterfaceReader, typeClass: Class<*>) {
     }
 
     val fieldTypeParser = reader.getFieldTypeParser(genericReturnType, false, method)
-    if (fieldTypeParser != InterfaceReader.VOID_PARSER) {
+    if (fieldTypeParser != VOID_PARSER) {
       fieldLoaders.add(FieldLoader(method.getName(), jsonName, fieldTypeParser, skipRead))
     }
 
-    val effectiveFieldName = if (fieldTypeParser == InterfaceReader.VOID_PARSER) null else method.getName()
+    val effectiveFieldName = if (fieldTypeParser == VOID_PARSER) null else method.getName()
     return object : MethodHandler {
       override fun writeMethodImplementationJava(scope: ClassScope, method: Method, out: TextOutput) {
         if (addNotNullAnnotation) {
@@ -99,7 +100,7 @@ class FieldProcessor(private val reader: InterfaceReader, typeClass: Class<*>) {
         writeMethodDeclarationJava(out, method)
         out.openBlock()
         if (effectiveFieldName != null) {
-          out.append("return ").append(TypeWriter.FIELD_PREFIX).append(effectiveFieldName).semi()
+          out.append("return ").append(FIELD_PREFIX).append(effectiveFieldName).semi()
         }
         out.closeBlock()
       }

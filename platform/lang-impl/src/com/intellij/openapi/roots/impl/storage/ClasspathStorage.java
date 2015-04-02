@@ -26,8 +26,10 @@ import com.intellij.openapi.roots.ModuleRootModel;
 import com.intellij.openapi.roots.impl.ModuleRootManagerImpl;
 import com.intellij.openapi.roots.impl.ModuleRootManagerImpl.ModuleRootManagerState;
 import com.intellij.openapi.roots.impl.RootModelImpl;
+import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.util.WriteExternalException;
 import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.io.FileUtilRt;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileAdapter;
 import com.intellij.openapi.vfs.VirtualFileEvent;
@@ -113,6 +115,8 @@ public class ClasspathStorage extends StateStorageBase<ClasspathStorage.MyStorag
       ModifiableRootModel model = null;
       try {
         model = ((ModuleRootManagerImpl)component).getModifiableModel();
+        // IDEA-137969 Eclipse integration: external remove of classpathentry is not synchronized
+        model.clear();
         myConverter.readClasspath(model);
         ((RootModelImpl)model).writeExternal(element);
       }
@@ -153,7 +157,9 @@ public class ClasspathStorage extends StateStorageBase<ClasspathStorage.MyStorag
   public void analyzeExternalChangesAndUpdateIfNeed(@NotNull Collection<VirtualFile> changedFiles, @NotNull Set<String> componentNames) {
     // if some file changed, so, changed
     componentNames.add("NewModuleRootManager");
-    myStorageData.loaded = false;
+    if (myStorageData != null) {
+      myStorageData.loaded = false;
+    }
   }
 
   @Nullable
@@ -172,7 +178,7 @@ public class ClasspathStorage extends StateStorageBase<ClasspathStorage.MyStorag
 
   @NotNull
   public static String getModuleDir(@NotNull Module module) {
-    return PathUtil.getParentPath(module.getModuleFilePath());
+    return PathUtil.getParentPath(FileUtilRt.toSystemIndependentName(module.getModuleFilePath()));
   }
 
   @NotNull
@@ -184,7 +190,12 @@ public class ClasspathStorage extends StateStorageBase<ClasspathStorage.MyStorag
     }
 
     storageRef = FileUtil.toSystemIndependentName(storageRef);
-    return storageRef.charAt(0) == '/' ? storageRef : moduleRoot + '/' + storageRef;
+    if (SystemInfo.isWindows ? FileUtil.isAbsolutePlatformIndependent(storageRef) : FileUtil.isUnixAbsolutePath(storageRef)) {
+      return storageRef;
+    }
+    else {
+      return moduleRoot + '/' + storageRef;
+    }
   }
 
   public static void setStorageType(@NotNull ModuleRootModel model, @NotNull String storageId) {

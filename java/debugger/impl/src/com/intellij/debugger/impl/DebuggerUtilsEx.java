@@ -446,6 +446,12 @@ public abstract class DebuggerUtilsEx extends DebuggerUtils {
     }
   }
 
+  public static void keep(Value value, EvaluationContext context) {
+    if (value instanceof ObjectReference) {
+      ((SuspendContextImpl)context.getSuspendContext()).keep((ObjectReference)value);
+    }
+  }
+
   public abstract DebuggerTreeNode  getSelectedNode    (DataContext context);
 
   public abstract EvaluatorBuilder  getEvaluatorBuilder();
@@ -732,5 +738,15 @@ public abstract class DebuggerUtilsEx extends DebuggerUtils {
     }
     if (file == null) return null;
     return file.findElementAt(offset);
+  }
+
+  public static String getLocationMethodQName(@NotNull Location location) {
+    StringBuilder res = new StringBuilder();
+    ReferenceType type = location.declaringType();
+    if (type != null) {
+      res.append(type.name()).append('.');
+    }
+    res.append(location.method().name());
+    return res.toString();
   }
 }

@@ -114,7 +114,8 @@ public class FileEditorManagerImpl extends FileEditorManagerEx implements Projec
   private final List<Pair<VirtualFile, EditorWindow>> mySelectionHistory = new ArrayList<Pair<VirtualFile, EditorWindow>>();
   private Reference<EditorComposite> myLastSelectedComposite = new WeakReference<EditorComposite>(null);
 
-  private final MergingUpdateQueue myQueue = new MergingUpdateQueue("FileEditorManagerUpdateQueue", 50, true, null);
+  private final MergingUpdateQueue myQueue = new MergingUpdateQueue("FileEditorManagerUpdateQueue", 50, true, 
+                                                                    MergingUpdateQueue.ANY_COMPONENT);
 
   private final BusyObject.Impl.Simple myBusyObject = new BusyObject.Impl.Simple();
 
@@ -787,6 +788,7 @@ public class FileEditorManagerImpl extends FileEditorManagerEx implements Projec
                                                          final Boolean pin,
                                                          final int index) {
     assert ApplicationManager.getApplication().isDispatchThread() || !ApplicationManager.getApplication().isReadAccessAllowed() : "must not open files under read action since we are doing a lot of invokeAndWaits here";
+    file.refresh(true, false);
 
     final Ref<EditorWithProviderComposite> compositeRef = new Ref<EditorWithProviderComposite>();
 

@@ -51,6 +51,7 @@ import java.util.Collection;
 public class OpenTaskDialog extends DialogWrapper {
   private final static Logger LOG = Logger.getInstance("#com.intellij.tasks.actions.SimpleOpenTaskDialog");
   private static final String START_FROM_BRANCH = "start.from.branch";
+  private static final String UPDATE_STATE_ENABLED = "tasks.open.task.update.state.enabled";
 
   private JPanel myPanel;
   @BindControl(value = "clearContext", instant = true)
@@ -61,9 +62,9 @@ public class OpenTaskDialog extends DialogWrapper {
   private JTextField myChangelistName;
   private JBCheckBox myCreateBranch;
   private JBCheckBox myCreateChangelist;
+  private JBCheckBox myUpdateState;
   private JBLabel myFromLabel;
   private ComboBox myBranchFrom;
-  private JLabel myTaskStateLabel;
   private TaskStateCombo myTaskStateCombo;
 
   private final Project myProject;
@@ -84,11 +85,23 @@ public class OpenTaskDialog extends DialogWrapper {
     binder.bindAnnotations(this);
     binder.reset();
 
-    myTaskStateLabel.setLabelFor(myTaskStateCombo);
-    if (!TaskStateCombo.isStateSupportedFor(task)) {
-      myTaskStateLabel.setVisible(false);
+    if (!TaskStateCombo.stateUpdatesSupportedFor(task)) {
+      myUpdateState.setVisible(false);
       myTaskStateCombo.setVisible(false);
     }
+    final boolean stateUpdatesEnabled = PropertiesComponent.getInstance(project).getBoolean(UPDATE_STATE_ENABLED, true);
+    myUpdateState.setSelected(stateUpdatesEnabled);
+    myUpdateState.addActionListener(new ActionListener() {
+      @Override
+      public void actionPerformed(ActionEvent e) {
+        final boolean selected = myUpdateState.isSelected();
+        PropertiesComponent.getInstance(project).setValue(UPDATE_STATE_ENABLED, String.valueOf(selected));
+        updateFields(false);
+        if (selected) {
+          myTaskStateCombo.scheduleUpdateOnce();
+        }
+      }
+    });
 
     TaskManagerImpl.Config state = taskManager.getState();
     myClearContext.setSelected(state.clearContext);
@@ -118,7 +131,7 @@ public class OpenTaskDialog extends DialogWrapper {
       }
       else {
         for (VcsTaskHandler handler : handlers) {
-          VcsTaskHandler.TaskInfo[] tasks = handler.getCurrentTasks();
+          VcsTaskHandler.TaskInfo[] tasks = handler.getAllExistingTasks();
           if (tasks.length > 0) {
             myVcsTaskHandler = handler;
             //noinspection unchecked
@@ -135,7 +148,8 @@ public class OpenTaskDialog extends DialogWrapper {
               });
             }
             if (info == null) {
-              info = tasks[0];
+              VcsTaskHandler.TaskInfo[] current = handler.getCurrentTasks();
+              info = current.length > 0 ? current[0] : tasks[0];
             }
             myBranchFrom.setSelectedItem(info);
             myBranchFrom.addActionListener(new ActionListener() {
@@ -163,13 +177,13 @@ public class OpenTaskDialog extends DialogWrapper {
 
       myBranchName.setText(taskManager.suggestBranchName(task));
       myChangelistName.setText(taskManager.getChangelistName(task));
-      updateFields(true);
     }
-    final JComponent preferredFocusedComponent = getPreferredFocusedComponent();
-    if (preferredFocusedComponent != null) {
-      myTaskStateCombo.registerUpDownAction(preferredFocusedComponent);
+    updateFields(true);
+    myTaskStateCombo.registerUpDownAction(myBranchName);
+    myTaskStateCombo.registerUpDownAction(myChangelistName);
+    if (myUpdateState.isSelected()) {
+      myTaskStateCombo.scheduleUpdateOnce();
     }
-    myTaskStateCombo.scheduleUpdate();
     init();
   }
 
@@ -182,6 +196,7 @@ public class OpenTaskDialog extends DialogWrapper {
     myFromLabel.setEnabled(myCreateBranch.isSelected());
     myBranchFrom.setEnabled(myCreateBranch.isSelected());
     myChangelistName.setEnabled(myCreateChangelist.isSelected());
+    myTaskStateCombo.setEnabled(myUpdateState.isSelected());
   }
 
 
@@ -197,16 +212,18 @@ public class OpenTaskDialog extends DialogWrapper {
     taskManager.getState().createChangelist = myCreateChangelist.isSelected();
     taskManager.getState().createBranch = myCreateBranch.isSelected();
 
-    final CustomTaskState taskState = myTaskStateCombo.getSelectedState();
-    final TaskRepository repository = myTask.getRepository();
-    if (repository != null && taskState != null) {
-      try {
-        repository.setTaskState(myTask, taskState);
-        repository.setPreferredOpenTaskState(taskState);
-      }
-      catch (Exception ex) {
-        Messages.showErrorDialog(myProject, ex.getMessage(), "Cannot Set State For Issue");
-        LOG.warn(ex);
+    if (myUpdateState.isSelected()) {
+      final CustomTaskState taskState = myTaskStateCombo.getSelectedState();
+      final TaskRepository repository = myTask.getRepository();
+      if (repository != null && taskState != null) {
+        try {
+          repository.setTaskState(myTask, taskState);
+          repository.setPreferredOpenTaskState(taskState);
+        }
+        catch (Exception ex) {
+          Messages.showErrorDialog(myProject, ex.getMessage(), "Cannot Set State For Issue");
+          LOG.warn(ex);
+        }
       }
     }
     final LocalTask activeTask = taskManager.getActiveTask();
@@ -274,9 +291,10 @@ public class OpenTaskDialog extends DialogWrapper {
     else if (myCreateChangelist.isSelected()) {
       return myChangelistName;
     }
-    else {
+    else if (myTaskStateCombo.isVisible() && myTaskStateCombo.isEnabled()){
       return myTaskStateCombo.getComboBox();
     }
+    return null;
   }
 
   protected JComponent createCenterPanel() {

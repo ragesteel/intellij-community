@@ -511,6 +511,8 @@ public class BalloonImpl implements Balloon, IdeTooltip.Ui {
 
       createComponent();
       if (!new Rectangle(myLayeredPane.getSize()).contains(new Rectangle(myComp.getSize()))) { // Balloon is bigger than window, don't show it at all.
+        myComp.removeAll();
+        myLayeredPane.remove(myComp);
         myLayeredPane = null;
         hide();
         return;
@@ -900,6 +902,8 @@ public class BalloonImpl implements Balloon, IdeTooltip.Ui {
     abstract int getChangeShift(AbstractPosition original, int xShift, int yShift);
 
     public void updateBounds(final BalloonImpl balloon) {
+      if (balloon.myLayeredPane == null || balloon.myComp == null) return;
+
       final Rectangle bounds =
         getUpdatedBounds(balloon.myLayeredPane.getSize(), balloon.myForcedBounds, balloon.myComp.getPreferredSize(), balloon.myShowPointer,
                          balloon.myTargetPoint, balloon.myContainerInsets);

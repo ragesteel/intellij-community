@@ -5,15 +5,11 @@ import gnu.trove.THashSet
 
 import java.util.ArrayList
 
-public fun GlobalScope(typeWriters: Collection<TypeWriter<*>>, basePackages: Collection<Map<Class<*>, String>>): GlobalScope {
+fun GlobalScope(typeWriters: Collection<TypeWriter<*>>, basePackages: Collection<Map<Class<*>, String>>): GlobalScope {
   return GlobalScope(State(typeWriters, basePackages))
 }
 
-public fun GlobalScope(globalScope: GlobalScope): GlobalScope {
-  return GlobalScope(globalScope.state)
-}
-
-open public class GlobalScope(val state: State) {
+open class GlobalScope(val state: State) {
   public fun getTypeImplReference(typeWriter: TypeWriter<*>): String {
     return state.getTypeImplReference(typeWriter)
   }
@@ -40,7 +36,7 @@ private class State(typeWriters: Collection<TypeWriter<*>>, private val basePack
   private val typesWithFactories = THashSet<TypeWriter<*>>()
   val typesWithFactoriesList = ArrayList<TypeWriter<*>>();
 
-  {
+  init {
     var uniqueCode = 0
     val result = THashMap<TypeWriter<*>, String>(typeWriters.size())
     for (handler in typeWriters) {

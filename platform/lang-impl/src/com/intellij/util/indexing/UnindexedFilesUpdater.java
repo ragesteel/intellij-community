@@ -31,6 +31,7 @@ import com.intellij.openapi.roots.CollectingContentIterator;
 import com.intellij.openapi.roots.ModuleRootAdapter;
 import com.intellij.openapi.roots.ModuleRootEvent;
 import com.intellij.openapi.roots.impl.PushedFilePropertiesUpdater;
+import com.intellij.openapi.roots.impl.PushedFilePropertiesUpdaterImpl;
 import com.intellij.openapi.startup.StartupManager;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.util.Consumer;
@@ -61,14 +62,29 @@ public class UnindexedFilesUpdater extends DumbModeTask {
   }
 
   private void updateUnindexedFiles(ProgressIndicator indicator) {
-    PushedFilePropertiesUpdater.getInstance(myProject).pushAllPropertiesNow();
+    long started = System.currentTimeMillis();
+    boolean canProceedConcurrently = !ApplicationManager.getApplication().isWriteAccessAllowed();
+    PushedFilePropertiesUpdaterImpl.ourConcurrentlyFlag.set(canProceedConcurrently);
+    try {
+      PushedFilePropertiesUpdater.getInstance(myProject).pushAllPropertiesNow();
+    } finally {
+      PushedFilePropertiesUpdaterImpl.ourConcurrentlyFlag.set(null);
+    }
+
+    LOG.info("Pushed properties in " + (System.currentTimeMillis() - started) + " ms");
 
     indicator.setIndeterminate(true);
     indicator.setText(IdeBundle.message("progress.indexing.scanning"));
 
     CollectingContentIterator finder = myIndex.createContentIterator(indicator);
     long l = System.currentTimeMillis();
-    myIndex.iterateIndexableFiles(finder, myProject, indicator);
+    FileBasedIndexImpl.ourConcurrentlyFlag.set(canProceedConcurrently);
+    try {
+      myIndex.iterateIndexableFiles(finder, myProject, indicator);
+    } finally {
+      FileBasedIndexImpl.ourConcurrentlyFlag.set(null);
+    }
+
     myIndex.filesUpdateEnumerationFinished();
 
     LOG.info("Indexable files iterated in " + (System.currentTimeMillis() - l) + " ms");
@@ -83,7 +99,7 @@ public class UnindexedFilesUpdater extends DumbModeTask {
       return;
     }
 
-    long started = System.currentTimeMillis();
+    started = System.currentTimeMillis();
     LOG.info("Unindexed files update started: " + files.size() + " files to update");
 
     indicator.setIndeterminate(false);

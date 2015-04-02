@@ -8,7 +8,6 @@ import com.intellij.tasks.CustomTaskState;
 import com.intellij.tasks.Task;
 import com.intellij.tasks.TaskRepository;
 import com.intellij.tasks.impl.TaskUiUtil.ComboBoxUpdater;
-import com.intellij.ui.ListCellRendererWrapper;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.util.Function;
 import com.intellij.util.PlatformIcons;
@@ -26,9 +25,10 @@ import java.util.List;
  * @author Mikhail Golubev
  */
 public abstract class TaskStateCombo extends JPanel {
-  private static final CustomTaskState DO_NOT_UPDATE_STATE = new CustomTaskState("", "-- do not update --");
 
-  public static boolean isStateSupportedFor(@Nullable Task task) {
+  private final JBLabel myHintLabel;
+
+  public static boolean stateUpdatesSupportedFor(@Nullable Task task) {
     if (task == null || !task.isIssue()) {
       return false;
     }
@@ -51,35 +51,23 @@ public abstract class TaskStateCombo extends JPanel {
     myProject = project;
     myTask = task;
 
-    final JBLabel hintButton = new JBLabel();
-    hintButton.setIcon(PlatformIcons.UP_DOWN_ARROWS);
-    hintButton.setToolTipText("Pressing Up or Down arrows while in editor changes the state");
+    myHintLabel = new JBLabel();
+    myHintLabel.setIcon(PlatformIcons.UP_DOWN_ARROWS);
+    myHintLabel.setToolTipText("Pressing Up or Down arrows while in editor changes the state");
     final JComboBox comboBox = myKindCombo.getComboBox();
     comboBox.setPreferredSize(new Dimension(300, UIUtil.fixComboBoxHeight(comboBox.getPreferredSize().height)));
-    final ListCellRenderer defaultRenderer = comboBox.getRenderer();
-    comboBox.setRenderer(new ListCellRenderer() {
-      @SuppressWarnings({"unchecked", "GtkPreferredJComboBoxRenderer"})
-      @Override
-      public Component getListCellRendererComponent(JList list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
-        if (value == null) {
-          return new ListCellRendererWrapper<CustomStateTrinityAdapter>() {
-            @Override
-            public void customize(JList list, CustomStateTrinityAdapter value, int index, boolean selected, boolean hasFocus) {
-              setText("-- no states available --");
-            }
-          }.getListCellRendererComponent(list, null, index, isSelected, cellHasFocus);
-        }
-        return defaultRenderer.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-      }
-    });
-
     setLayout(new BoxLayout(this, BoxLayout.LINE_AXIS));
     add(myKindCombo);
-    add(hintButton);
+    add(myHintLabel);
   }
 
-  public boolean scheduleUpdate() {
-    if (myProject != null && isStateSupportedFor(myTask)) {
+  /**
+   * One-shot method. Update combo box items only once.
+   *
+   * @return whether update was actually scheduled
+   */
+  public boolean scheduleUpdateOnce() {
+    if (myProject != null && stateUpdatesSupportedFor(myTask) && myKindCombo.getComboBox().getItemCount() == 0) {
       final JComboBox comboBox = myKindCombo.getComboBox();
       final TaskRepository repository = myTask.getRepository();
       assert repository != null;
@@ -96,16 +84,20 @@ public abstract class TaskStateCombo extends JPanel {
           final CustomTaskState state = getPreferredState(repository, CustomStateTrinityAdapter.unwrapList(myResult));
           return state != null ? new CustomStateTrinityAdapter(state) : null;
         }
-
-        @Nullable
-        @Override
-        public CustomStateTrinityAdapter getExtraItem() {
-          return new CustomStateTrinityAdapter(DO_NOT_UPDATE_STATE);
-        }
       }.queue();
       return true;
     }
     return false;
+  }
+
+  @Override
+  public void setEnabled(boolean enabled) {
+    super.setEnabled(enabled);
+    myKindCombo.setEnabled(enabled);
+  }
+
+  public void showHintLabel(boolean show) {
+    myHintLabel.setVisible(show);
   }
 
   /**
@@ -117,8 +109,7 @@ public abstract class TaskStateCombo extends JPanel {
     if (item == null) {
       return null;
     }
-    final CustomTaskState state = item.myState;
-    return state == DO_NOT_UPDATE_STATE ? null : state;
+    return item.myState;
   }
 
   public void registerUpDownAction(@NotNull JComponent focusable) {

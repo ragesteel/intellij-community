@@ -48,6 +48,7 @@ import com.intellij.openapi.ui.popup.Balloon;
 import com.intellij.openapi.util.Comparing;
 import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.SystemInfo;
+import com.intellij.openapi.wm.impl.IdeBackgroundUtil;
 import com.intellij.ui.HintHint;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.awt.RelativePoint;
@@ -78,6 +79,7 @@ class EditorGutterComponentImpl extends EditorGutterComponentEx implements Mouse
   private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.editor.impl.EditorGutterComponentImpl");
   private static final int START_ICON_AREA_WIDTH = 15;
   private static final int FREE_PAINTERS_AREA_WIDTH = 5;
+  private static final int GAP_BETWEEN_ICONS_AND_FREE_PAINTERS_AREA = 5;
   private static final int GAP_BETWEEN_ICONS = 3;
   private static final int GAP_BEFORE_LINE_NUMBERS = 5;
   private static final int GAP_AFTER_LINE_NUMBERS = 4;
@@ -91,7 +93,7 @@ class EditorGutterComponentImpl extends EditorGutterComponentEx implements Mouse
 
   private final EditorImpl myEditor;
   private final FoldingAnchorsOverlayStrategy myAnchorsDisplayStrategy;
-  private int myLineMarkerAreaWidth = START_ICON_AREA_WIDTH + FREE_PAINTERS_AREA_WIDTH;
+  private int myLineMarkerAreaWidth = START_ICON_AREA_WIDTH + GAP_BETWEEN_ICONS_AND_FREE_PAINTERS_AREA + FREE_PAINTERS_AREA_WIDTH;
   private int myIconsAreaWidth = START_ICON_AREA_WIDTH;
   private int myLineNumberAreaWidth = 0;
   private int myAdditionalLineNumberAreaWidth = 0;
@@ -215,8 +217,8 @@ class EditorGutterComponentImpl extends EditorGutterComponentEx implements Mouse
         int lastVisibleOffset = myEditor.logicalPositionToOffset(myEditor.xyToLogicalPosition(new Point(0, clip.y + clip.height + myEditor.getLineHeight())));
         paintFoldingBackground(g, clip, backgroundColor);
         paintLineMarkersBackground(g, clip, backgroundColor);
-        paintBackground(g, clip, getLineMarkerAreaOffset(), getLineMarkerAreaWidth(), backgroundColor);
         paintEditorBackgrounds(g, firstVisibleOffset, lastVisibleOffset);
+
         paintAnnotations(g, clip);
         paintLineMarkers(g, firstVisibleOffset, lastVisibleOffset);
         paintFoldingLines((Graphics2D)g, clip);
@@ -228,6 +230,8 @@ class EditorGutterComponentImpl extends EditorGutterComponentEx implements Mouse
       }
 
       g2.setTransform(old);
+
+      IdeBackgroundUtil.paintEditorBackground(g, this);
     }
     finally {
       ((ApplicationImpl)ApplicationManager.getApplication()).editorPaintFinish();
@@ -688,7 +692,7 @@ class EditorGutterComponentImpl extends EditorGutterComponentEx implements Mouse
       }
     });
 
-    myLineMarkerAreaWidth = myIconsAreaWidth + FREE_PAINTERS_AREA_WIDTH;
+    myLineMarkerAreaWidth = myIconsAreaWidth + GAP_BETWEEN_ICONS_AND_FREE_PAINTERS_AREA + FREE_PAINTERS_AREA_WIDTH;
   }
 
   private boolean isHighlighterVisible(RangeHighlighter highlighter) {
@@ -780,7 +784,7 @@ class EditorGutterComponentImpl extends EditorGutterComponentEx implements Mouse
 
     int height = endY - startY;
     int w = FREE_PAINTERS_AREA_WIDTH;
-    int x = getLineMarkerAreaOffset() + myIconsAreaWidth - 1;
+    int x = getLineMarkerFreePaintersAreaOffset() - 1;
     return new Rectangle(x, startY, w, height);
   }
 
@@ -1141,6 +1145,10 @@ class EditorGutterComponentImpl extends EditorGutterComponentEx implements Mouse
     return getAnnotationsAreaOffset() + getAnnotationsAreaWidthEx();
   }
 
+  private int getLineMarkerFreePaintersAreaOffset() {
+    return getLineMarkerAreaOffset() + myIconsAreaWidth + GAP_BETWEEN_ICONS_AND_FREE_PAINTERS_AREA;
+  }
+  
   @Override
   public int getIconsAreaWidth() {
     return myIconsAreaWidth;
@@ -1364,7 +1372,7 @@ class EditorGutterComponentImpl extends EditorGutterComponentEx implements Mouse
     if (findFoldingAnchorAt(e.getX(), e.getY()) != null) {
       return null;
     }
-    if (e.isConsumed() || e.getX() > getWhitespaceSeparatorOffset()) {
+    if (e.isConsumed() || e.getX() > getWhitespaceSeparatorOffset() || e.getX() < getLineMarkerFreePaintersAreaOffset()) {
       return null;
     }
     final ActiveGutterRenderer[] gutterRenderer = {null};
